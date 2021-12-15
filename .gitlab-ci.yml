@@ -1,0 +1,92 @@
+---
+image: 'centos:7.7.1908'
+
+variables:
+  #GIT_STRATEGY: clone
+  #GIT_DEPTH: "0"
+  #VERSION: '14.2.20'
+  BUILDVERSION: '${CI_COMMIT_REF_SLUG}-${CI_COMMIT_SHORT_SHA}'
+  #BUILDVERSION: 'v14-2-20-ew-pipeline-125ca046'
+  SUBVERSION: 'ew'
+
+cache: &global_cache
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - cache/
+  policy: pull-push
+
+.before: &before
+  before_script:
+    - uname -a
+
+stages:
+  - build
+  - container
+
+build:
+  stage: build
+  tags:
+    - docker
+    - cpu
+  variables:
+    GIT_STRATEGY: clone
+    GIT_DEPTH: "200"
+  #only:
+  #  - tags
+  cache: {}
+  artifacts:
+    paths:
+      - rpmbuild
+    expire_in: 1 week
+  script:
+    - yum install -y epel-release
+    - yum install -y git wget sudo which jq
+    - yum install -y rpm-build rpmdevtools rpm-build cmake3 createrepo
+    - yum install -y python-pip python-virtualenv
+    - yum install -y centos-release-scl
+    - yum -y install devtoolset-8
+    - scl enable devtoolset-8 bash
+    - "sed -i -e \'/BuildRequires:  python%{_python_buildid}-scipy/d\' ceph.spec.in"
+    - git remote add upstream https://github.com/ceph/ceph.git
+    - git fetch --tags upstream
+    - git log -n 10
+    - ./make-srpm.sh
+    - ./install-deps.sh
+    - CEPH=$(ls ceph-*.src.rpm)
+    - mkdir -p $CI_PROJECT_DIR/rpmbuild
+    - rpmbuild --define "_rpmdir $CI_PROJECT_DIR/rpmbuild" --rebuild $CEPH
+    - rm -f $CI_PROJECT_DIR/rpmbuild/x86_64/ceph-debuginfo*.rpm
+    - createrepo --update -q $CI_PROJECT_DIR/rpmbuild
+    - if [ ! "${CI_COMMIT_TAG}x" = "x" ]; then export BUILDVERSION=$CI_COMMIT_TAG; fi
+    - curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+    - unzip awscliv2.zip
+    - ./aws/install
+    #- aws s3 --endpoint-url https://s3.ewstorage.ch mb s3://$CI_COMMIT_SHA
+    - aws s3 --endpoint-url https://s3.ewstorage.ch sync $CI_PROJECT_DIR/rpmbuild s3://ceph/${BUILDVERSION} --acl public-read
+    #- aws s3api --endpoint-url https://s3.ewstorage.ch put-bucket-acl --bucket ceph --acl public-read
+    #TODO - aws add lifecycle json to delete bucket and objects after 365 days
+
+prod-container:
+  stage: container
+  variables:
+    UPSTREAM_VERSION: '$BUILDVERSION'
+    UPSTREAM_TAG: '$CI_COMMIT_TAG'
+  trigger:
+    project: ceph/ceph-container
+    branch: v4.0.22-ew
+  rules:
+    - if: '$CI_COMMIT_TAG && $CI_COMMIT_TAG !~ /.*dev/'
+
+dev-container:
+  stage: container
+  variables:
+    UPSTREAM_VERSION: '$BUILDVERSION'
+  trigger:
+    project: ceph/ceph-container
+    branch: v4.0.22-ew
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: never
+    - if: '$BUILDVERSION'
+
+
