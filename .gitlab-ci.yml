@@ -40,6 +40,7 @@ build:
     expire_in: 1 week
   script:
     - yum install -y epel-release
+    - yum install -y ca-certificates
     - yum install -y git wget sudo which jq
     - yum install -y rpm-build rpmdevtools rpm-build cmake3 createrepo
     - yum install -y python-pip python-virtualenv
