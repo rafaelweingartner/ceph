@@ -6110,6 +6110,12 @@ std::vector<Option> get_rgw_options() {
         "Max number of Keystone tokens that will be cached. Token that is not cached "
         "requires RGW to access the Keystone server when authenticating."),
 
+    Option("rgw_keystone_token_cache_ttl", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+            .set_default(300)
+            .set_description("Keystone token secret key cache TTL")
+            .set_long_description(
+                    "The TTL for secret keys that are loaded from Keystone and stored in the cache system."),
+
     Option("rgw_keystone_revocation_interval", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(15_min)
     .set_description("Keystone cache revocation interval")
